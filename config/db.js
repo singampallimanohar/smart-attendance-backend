@@ -40,11 +40,18 @@ async function createTables() {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS students (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            student_id VARCHAR(50) UNIQUE NOT NULL,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) UNIQUE NOT NULL,
             password VARCHAR(255) NOT NULL,
             phone VARCHAR(20),
             department VARCHAR(100),
+            year VARCHAR(50),
+            student_photo TEXT,
+            status VARCHAR(50) DEFAULT 'active',
+            face_registered BOOLEAN DEFAULT FALSE,
+            face_embedding TEXT,
+            created_by_admin BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);

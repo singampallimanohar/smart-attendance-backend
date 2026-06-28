@@ -2,66 +2,131 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const compression = require("compression");
+const morgan = require("morgan");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 
-const security = require("./middleware/security");
+// Database Connection
+require("./config/db");
 
-security(app);
-
+// Middleware
+app.use(helmet());
+app.use(compression());
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan("dev"));
 
-const { rateLimit } = require('express-rate-limit');
+// ======================
+// Rate Limiters
+// ======================
 
-// Use the existing routes from the project structure
-const adminRoutes = require('./routes/adminRoutes');
-const attendanceRoutes = require('./routes/attendanceRoutes');
-const settingsRoutes = require('./routes/settingsRoutes');
-const reportRoutes = require('./routes/reportRoutes');
-const studentRoutes = require('./routes/studentRoutes');
-const notificationRoutes = require('./routes/notificationRoutes');
-
-// Basic rate limiting for all routes
+// Global Limiter
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100, // Limit each IP to 100 requests per `window`
-  message: { success: false, message: 'Too many requests, please try again later.' }
-});
-app.use(globalLimiter);
-
-// Stricter rate limiting for login
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 100,
   message: {
     success: false,
-    message: 'Too many login attempts. Please try again after 15 minutes.'
+    message: "Too many requests. Please try again later."
   }
 });
 
-// Assuming login is handled in studentRoutes or adminRoutes, we apply it conditionally or globally to the auth path if it exists
-app.use('/api/student/login', loginLimiter);
-app.use('/api/admin/login', loginLimiter);
+app.use(globalLimiter);
 
-// Mount Routes
-app.use('/api/admin', adminRoutes);
-app.use('/api/attendance', attendanceRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/student', studentRoutes);
-app.use('/api/students', studentRoutes);
-app.use('/api/notifications', notificationRoutes);
+// Login Limiter
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many login attempts. Try again after 15 minutes."
+  }
+});
 
-app.get('/', (req, res) => {
-  res.json({
+// ======================
+// Routes
+// ======================
+
+const authRoutes = require("./routes/authRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const studentRoutes = require("./routes/studentRoutes");
+const attendanceRoutes = require("./routes/attendanceRoutes");
+const settingsRoutes = require("./routes/settingsRoutes");
+const reportRoutes = require("./routes/reportRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
+
+// Authentication Route
+app.use("/api", loginLimiter, authRoutes);
+
+// Admin Routes
+app.use("/api/admin", adminRoutes);
+
+// Student Routes
+app.use("/api/student", studentRoutes);
+app.use("/api/students", studentRoutes);
+
+// Attendance
+app.use("/api/attendance", attendanceRoutes);
+
+// Settings
+app.use("/api/settings", settingsRoutes);
+
+// Reports
+app.use("/api/reports", reportRoutes);
+
+// Notifications
+app.use("/api/notifications", notificationRoutes);
+
+// ======================
+// Health Check
+// ======================
+
+app.get("/", (req, res) => {
+  res.status(200).json({
     success: true,
-    message: 'Smart Attendance API Running'
+    message: "Smart Attendance Backend Running Successfully",
+    version: "1.0.0"
   });
 });
 
-const PORT = process.env.PORT || 3000;
+// ======================
+// 404 Handler
+// ======================
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route Not Found"
+  });
+});
+
+// ======================
+// Global Error Handler
+// ======================
+
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Internal Server Error"
+  });
+});
+
+// ======================
+// Start Server
+// ======================
+
+const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`======================================`);
+  console.log(`🚀 Server Running on Port ${PORT}`);
+  console.log(`🌍 http://localhost:${PORT}`);
+  console.log(`======================================`);
 });

@@ -1,32 +1,96 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const adminController = require('../controllers/adminController');
-const { verifyToken, verifyAdmin } = require('../utils/authMiddleware');
-const multer = require('multer');
 
-// Configure multer for saving face images
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/faces/');
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'face-' + uniqueSuffix + '-' + file.originalname);
-    }
-});
-const upload = multer({ storage });
+const adminController = require("../controllers/adminController");
+const {
+  verifyToken,
+  verifyAdmin
+} = require("../utils/authMiddleware");
 
-router.use(verifyToken, verifyAdmin); // Apply admin auth to all routes below
+// If you use Multer for student photo uploads
+let upload;
 
-router.get('/dashboard', adminController.getDashboardStats);
-router.post('/students', upload.fields([
-    { name: 'face_left', maxCount: 1 },
-    { name: 'face_center', maxCount: 1 },
-    { name: 'face_right', maxCount: 1 }
-]), adminController.addStudent);
-router.get('/students', adminController.getAllStudents);
-router.put('/students/:id', adminController.editStudent);
-router.delete('/students/:id', adminController.deleteStudent);
-router.get('/attendance', adminController.getAllAttendance);
+try {
+  upload = require("../middleware/upload");
+} catch (err) {
+  // Continue even if upload middleware doesn't exist
+  upload = null;
+}
+
+// ==========================================
+// Protect all admin routes
+// ==========================================
+
+router.use(verifyToken);
+router.use(verifyAdmin);
+
+// ==========================================
+// Dashboard
+// ==========================================
+
+router.get(
+  "/dashboard",
+  adminController.getDashboardStats
+);
+
+// ==========================================
+// Student Routes
+// ==========================================
+
+// Add Student
+if (
+  upload &&
+  typeof upload.fields === "function"
+) {
+  router.post(
+    "/students",
+    upload.fields([
+      {
+        name: "photo",
+        maxCount: 1
+      },
+      {
+        name: "faceImage",
+        maxCount: 1
+      }
+    ]),
+    adminController.addStudent
+  );
+} else {
+  router.post(
+    "/students",
+    adminController.addStudent
+  );
+}
+
+// Get All Students
+router.get(
+  "/students",
+  adminController.getAllStudents
+);
+
+// Edit Student
+router.put(
+  "/students/:id",
+  adminController.editStudent
+);
+
+// Delete Student
+router.delete(
+  "/students/:id",
+  adminController.deleteStudent
+);
+
+// ==========================================
+// Attendance
+// ==========================================
+
+// Get Attendance
+router.get(
+  "/attendance",
+  adminController.getAllAttendance
+);
+
+// ==========================================
 
 module.exports = router;
