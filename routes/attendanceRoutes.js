@@ -1,36 +1,54 @@
-const { matchFace } = require("../services/faceService");
+const express = require("express");
+const router = express.Router();
 
-// ================= FACE ATTENDANCE =================
+// ===============================
+// FACE MARK ATTENDANCE (DUMMY / SAFE VERSION)
+// ===============================
 router.post("/face-mark", async (req, res) => {
   try {
-    const db = req.app.locals.db;
-    const { descriptor } = req.body;
+    const { studentId } = req.body;
 
-    // Get all students with face data
-    const [students] = await db.query(
-      "SELECT student_id, face_descriptor FROM students WHERE face_descriptor IS NOT NULL"
-    );
-
-    const match = await matchFace(descriptor, students);
-
-    if (!match) {
-      return res.json({
+    if (!studentId) {
+      return res.status(400).json({
         success: false,
-        message: "No face match found",
+        message: "Student ID required"
       });
     }
 
-    await db.query(
-      "INSERT INTO attendance (student_id, date, status, time_in) VALUES (?, CURDATE(), 'present', CURTIME())",
-      [match]
-    );
-
-    res.json({
+    // TODO: later connect MySQL attendance table
+    return res.json({
       success: true,
-      message: "Attendance marked",
-      student_id: match,
+      message: "Attendance marked successfully (mock)",
+      data: {
+        studentId,
+        status: "present",
+        time: new Date()
+      }
     });
-  } catch (err) {
-    res.json({ success: false, message: err.message });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 });
+
+// ===============================
+// GET ATTENDANCE
+// ===============================
+router.get("/", async (req, res) => {
+  try {
+    return res.json({
+      success: true,
+      message: "Attendance route working"
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+module.exports = router;
