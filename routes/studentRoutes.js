@@ -1,32 +1,31 @@
 const express = require("express");
 const router = express.Router();
 
-const studentController = require("../controllers/studentController");
-const {
-  verifyToken,
-  verifyStudent
-} = require("../utils/authMiddleware");
+// Get all students
+router.post("/save-face", async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { student_id, face_descriptor } = req.body;
 
-// =========================================
-// Protect All Student Routes
-// =========================================
-router.use(verifyToken);
-router.use(verifyStudent);
+    if (!student_id || !face_descriptor) {
+      return res.json({
+        success: false,
+        message: "Missing data",
+      });
+    }
 
-// =========================================
-// Student Profile
-// =========================================
-router.get(
-  "/profile",
-  studentController.getProfile
-);
+    await db.query(
+      "UPDATE students SET face_descriptor = ? WHERE student_id = ?",
+      [JSON.stringify(face_descriptor), student_id]
+    );
 
-// =========================================
-// Attendance History
-// =========================================
-router.get(
-  "/attendance-history",
-  studentController.getAttendanceHistory
-);
+    res.json({
+      success: true,
+      message: "Face data saved successfully",
+    });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
 
 module.exports = router;

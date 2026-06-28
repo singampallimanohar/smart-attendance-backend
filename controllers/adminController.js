@@ -43,9 +43,25 @@ exports.getDashboardStats = async (req, res) => {
     const attendancePercentage =
       totalStudents === 0
         ? 0
-        : Number(
-            ((presentToday / totalStudents) * 100).toFixed(2)
-          );
+        : Number(((presentToday / totalStudents) * 100).toFixed(2));
+
+    // Weekly Chart (last 7 days)
+    const [weeklyData] = await pool.query(`
+      SELECT date, COUNT(DISTINCT student_id) as presentCount
+      FROM attendance
+      WHERE date >= DATE_SUB(?, INTERVAL 7 DAY) AND status = 'Present'
+      GROUP BY date
+      ORDER BY date ASC
+    `, [today]);
+
+    // Monthly Chart (last 30 days)
+    const [monthlyData] = await pool.query(`
+      SELECT date, COUNT(DISTINCT student_id) as presentCount
+      FROM attendance
+      WHERE date >= DATE_SUB(?, INTERVAL 30 DAY) AND status = 'Present'
+      GROUP BY date
+      ORDER BY date ASC
+    `, [today]);
 
     return res.json({
       success: true,
@@ -53,7 +69,9 @@ exports.getDashboardStats = async (req, res) => {
         totalStudents,
         presentToday,
         absentToday,
-        attendancePercentage
+        attendancePercentage,
+        weeklyChart: weeklyData,
+        monthlyChart: monthlyData
       }
     });
 

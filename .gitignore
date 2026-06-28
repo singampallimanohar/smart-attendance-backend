@@ -1,3 +1,6 @@
-node_modules
+node_modules/
 .env
-uploads
+package-lock.json
+npm-debug.log
+models/
+.DS_Store

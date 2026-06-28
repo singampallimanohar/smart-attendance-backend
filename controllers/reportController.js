@@ -1,127 +1,146 @@
-const reportRepository = require('../repositories/reportRepository');
-const exportService = require('../services/exportService');
+const getPool = require("../config/db");
+const excelJS = require("exceljs");
+const PDFDocument = require("pdfkit");
 
-// Helper: Get IST date string (YYYY-MM-DD)
-function getISTDate() {
-    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
-    return formatter.format(new Date());
-}
+exports.exportAttendanceExcel = async (req, res) => {
+  try {
+    const pool = getPool();
+    const { startDate, endDate, department } = req.query;
 
-// Helper: Get date N days ago in IST
-function getISTDateDaysAgo(days) {
-    const d = new Date();
-    d.setDate(d.getDate() - days);
-    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
-    return formatter.format(d);
-}
+    let query = `
+      SELECT a.date, s.student_id, s.name, s.department, a.status, a.check_in, a.check_out
+      FROM attendance a
+      JOIN students s ON a.student_id = s.id
+      WHERE 1=1
+    `;
+    const params = [];
 
-// Helper: Get first day of current month in IST
-function getISTMonthStart() {
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
-    const parts = formatter.formatToParts(now);
-    const y = parts.find(p => p.type === 'year').value;
-    const m = parts.find(p => p.type === 'month').value;
-    return `${y}-${m}-01`;
-}
-
-// GET /api/reports/daily
-exports.getDailyReport = async (req, res) => {
-    try {
-        const today = getISTDate();
-        const rows = await reportRepository.getAttendanceData(today, today);
-        res.json({ success: true, data: rows });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: 'Server error' });
+    if (startDate && endDate) {
+      query += " AND a.date BETWEEN ? AND ?";
+      params.push(startDate, endDate);
     }
+    if (department) {
+      query += " AND s.department = ?";
+      params.push(department);
+    }
+    query += " ORDER BY a.date DESC, s.name ASC";
+
+    const [rows] = await pool.query(query, params);
+
+    const workbook = new excelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Attendance Report");
+
+    worksheet.columns = [
+      { header: "Date", key: "date", width: 15 },
+      { header: "Student ID", key: "student_id", width: 15 },
+      { header: "Name", key: "name", width: 25 },
+      { header: "Department", key: "department", width: 20 },
+      { header: "Status", key: "status", width: 15 },
+      { header: "Check In", key: "check_in", width: 15 },
+      { header: "Check Out", key: "check_out", width: 15 },
+    ];
+
+    rows.forEach((row) => {
+      worksheet.addRow({
+        date: new Date(row.date).toISOString().split('T')[0],
+        student_id: row.student_id,
+        name: row.name,
+        department: row.department,
+        status: row.status,
+        check_in: row.check_in || "-",
+        check_out: row.check_out || "-",
+      });
+    });
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", "attachment; filename=attendance_report.xlsx");
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Excel Export Error:", error);
+    res.status(500).json({ success: false, message: "Error generating Excel report" });
+  }
 };
 
-// GET /api/reports/weekly
-exports.getWeeklyReport = async (req, res) => {
-    try {
-        const today = getISTDate();
-        const weekAgo = getISTDateDaysAgo(7);
-        const rows = await reportRepository.getAttendanceData(weekAgo, today);
-        res.json({ success: true, data: rows });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-};
+exports.exportAttendancePDF = async (req, res) => {
+  try {
+    const pool = getPool();
+    const { startDate, endDate, department } = req.query;
 
-// GET /api/reports/monthly
-exports.getMonthlyReport = async (req, res) => {
-    try {
-        const today = getISTDate();
-        const monthStart = getISTMonthStart();
-        const rows = await reportRepository.getAttendanceData(monthStart, today);
-        res.json({ success: true, data: rows });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-};
+    let query = `
+      SELECT a.date, s.student_id, s.name, s.department, a.status, a.check_in, a.check_out
+      FROM attendance a
+      JOIN students s ON a.student_id = s.id
+      WHERE 1=1
+    `;
+    const params = [];
 
-function getExportParams(type) {
-    let startDate, endDate, reportTitle;
-    const today = getISTDate();
-    switch (type) {
-        case 'weekly':
-            startDate = getISTDateDaysAgo(7);
-            endDate = today;
-            reportTitle = 'Weekly Attendance Report';
-            break;
-        case 'monthly':
-            startDate = getISTMonthStart();
-            endDate = today;
-            reportTitle = 'Monthly Attendance Report';
-            break;
-        default:
-            startDate = today;
-            endDate = today;
-            reportTitle = 'Daily Attendance Report';
+    if (startDate && endDate) {
+      query += " AND a.date BETWEEN ? AND ?";
+      params.push(startDate, endDate);
     }
-    return { startDate, endDate, reportTitle };
-}
+    if (department) {
+      query += " AND s.department = ?";
+      params.push(department);
+    }
+    query += " ORDER BY a.date DESC, s.name ASC";
 
-// GET /api/reports/export/pdf?type=daily|weekly|monthly
-exports.exportPDF = async (req, res) => {
-    try {
-        const type = req.query.type || 'daily';
-        const { startDate, endDate, reportTitle } = getExportParams(type);
-        const rows = await reportRepository.getAttendanceData(startDate, endDate);
-        const stats = await reportRepository.getStats(startDate, endDate);
-        await exportService.generatePDF(res, reportTitle, startDate, endDate, stats, rows);
-    } catch (error) {
-        console.error('PDF Export Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to generate PDF' });
-    }
-};
+    const [rows] = await pool.query(query, params);
 
-// GET /api/reports/export/excel?type=daily|weekly|monthly
-exports.exportExcel = async (req, res) => {
-    try {
-        const type = req.query.type || 'daily';
-        const { startDate, endDate, reportTitle } = getExportParams(type);
-        const rows = await reportRepository.getAttendanceData(startDate, endDate);
-        const stats = await reportRepository.getStats(startDate, endDate);
-        await exportService.generateExcel(res, reportTitle, startDate, endDate, stats, rows);
-    } catch (error) {
-        console.error('Excel Export Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to generate Excel' });
-    }
-};
+    const doc = new PDFDocument({ margin: 30, size: 'A4' });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", "attachment; filename=attendance_report.pdf");
 
-// GET /api/reports/export/csv?type=daily|weekly|monthly
-exports.exportCSV = async (req, res) => {
-    try {
-        const type = req.query.type || 'daily';
-        const { startDate, endDate, reportTitle } = getExportParams(type);
-        const rows = await reportRepository.getAttendanceData(startDate, endDate);
-        await exportService.generateCSV(res, reportTitle, startDate, endDate, rows);
-    } catch (error) {
-        console.error('CSV Export Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to generate CSV' });
+    doc.pipe(res);
+
+    doc.fontSize(18).text("Smart Attendance Report", { align: "center" });
+    doc.moveDown();
+
+    if (startDate && endDate) {
+      doc.fontSize(12).text(`Date Range: ${startDate} to ${endDate}`);
     }
+    if (department) {
+      doc.fontSize(12).text(`Department: ${department}`);
+    }
+    doc.moveDown();
+
+    // Table Header
+    const startY = doc.y;
+    doc.fontSize(10).font("Helvetica-Bold");
+    doc.text("Date", 30, startY);
+    doc.text("ID", 100, startY);
+    doc.text("Name", 170, startY);
+    doc.text("Dept", 300, startY);
+    doc.text("Status", 370, startY);
+    doc.text("In", 440, startY);
+    doc.text("Out", 500, startY);
+
+    let currentY = startY + 15;
+    doc.font("Helvetica");
+
+    rows.forEach((row) => {
+      if (currentY > 750) {
+        doc.addPage();
+        currentY = 30;
+      }
+      const dateStr = new Date(row.date).toISOString().split('T')[0];
+      doc.text(dateStr, 30, currentY);
+      doc.text(row.student_id, 100, currentY);
+      doc.text(row.name, 170, currentY);
+      doc.text(row.department, 300, currentY);
+      doc.text(row.status, 370, currentY);
+      doc.text(row.check_in || "-", 440, currentY);
+      doc.text(row.check_out || "-", 500, currentY);
+      
+      currentY += 15;
+    });
+
+    doc.end();
+  } catch (error) {
+    console.error("PDF Export Error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: "Error generating PDF report" });
+    }
+  }
 };

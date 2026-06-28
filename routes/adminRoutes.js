@@ -1,96 +1,51 @@
 const express = require("express");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
 const router = express.Router();
 
-const adminController = require("../controllers/adminController");
-const {
-  verifyToken,
-  verifyAdmin
-} = require("../utils/authMiddleware");
+// ================= LOGIN =================
+router.post("/login", async (req, res) => {
+  const db = req.app.locals.db;
 
-// If you use Multer for student photo uploads
-let upload;
+  try {
+    const { email, password } = req.body;
 
-try {
-  upload = require("../middleware/upload");
-} catch (err) {
-  // Continue even if upload middleware doesn't exist
-  upload = null;
-}
+    const [users] = await db.query(
+      "SELECT * FROM admins WHERE email = ?",
+      [email]
+    );
 
-// ==========================================
-// Protect all admin routes
-// ==========================================
+    if (users.length === 0) {
+      return res.json({ success: false, message: "User not found" });
+    }
 
-router.use(verifyToken);
-router.use(verifyAdmin);
+    const user = users[0];
 
-// ==========================================
-// Dashboard
-// ==========================================
+    const isMatch = await bcrypt.compare(password, user.password);
 
-router.get(
-  "/dashboard",
-  adminController.getDashboardStats
-);
+    if (!isMatch) {
+      return res.json({ success: false, message: "Wrong password" });
+    }
 
-// ==========================================
-// Student Routes
-// ==========================================
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
-// Add Student
-if (
-  upload &&
-  typeof upload.fields === "function"
-) {
-  router.post(
-    "/students",
-    upload.fields([
-      {
-        name: "photo",
-        maxCount: 1
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
       },
-      {
-        name: "faceImage",
-        maxCount: 1
-      }
-    ]),
-    adminController.addStudent
-  );
-} else {
-  router.post(
-    "/students",
-    adminController.addStudent
-  );
-}
-
-// Get All Students
-router.get(
-  "/students",
-  adminController.getAllStudents
-);
-
-// Edit Student
-router.put(
-  "/students/:id",
-  adminController.editStudent
-);
-
-// Delete Student
-router.delete(
-  "/students/:id",
-  adminController.deleteStudent
-);
-
-// ==========================================
-// Attendance
-// ==========================================
-
-// Get Attendance
-router.get(
-  "/attendance",
-  adminController.getAllAttendance
-);
-
-// ==========================================
+    });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
 
 module.exports = router;

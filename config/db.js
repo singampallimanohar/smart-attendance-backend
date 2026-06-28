@@ -33,6 +33,7 @@ async function createTables() {
         CREATE TABLE IF NOT EXISTS admin (
             id INT AUTO_INCREMENT PRIMARY KEY,
             username VARCHAR(255) UNIQUE NOT NULL,
+            email VARCHAR(255) UNIQUE,
             password VARCHAR(255) NOT NULL
         )
     `);
@@ -57,6 +58,17 @@ async function createTables() {
     `);
 
     await pool.query(`
+        CREATE TABLE IF NOT EXISTS student_faces (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            student_id INT NOT NULL,
+            face_left_image TEXT,
+            face_center_image TEXT,
+            face_right_image TEXT,
+            FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+        )
+    `);
+
+    await pool.query(`
         CREATE TABLE IF NOT EXISTS attendance (
             id INT AUTO_INCREMENT PRIMARY KEY,
             student_id INT,
@@ -66,9 +78,32 @@ async function createTables() {
             status VARCHAR(50) DEFAULT 'Absent',
             face_verified BOOLEAN DEFAULT FALSE,
             location_verified BOOLEAN DEFAULT FALSE,
+            face_score DECIMAL(5,2) DEFAULT 0.00,
+            liveness_score DECIMAL(5,2) DEFAULT 0.00,
+            location_status VARCHAR(50) DEFAULT 'Unknown',
+            attendance_status VARCHAR(50) DEFAULT 'Absent',
+            session_type VARCHAR(20) DEFAULT 'morning',
+            distance_from_campus DECIMAL(10,2) DEFAULT 0.00,
+            latitude DECIMAL(10,8),
+            longitude DECIMAL(11,8),
             FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
         )
     `);
+
+    // Safely add missing columns to attendance if upgrading existing deployments
+    const attendanceCols = [
+        "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS face_score DECIMAL(5,2) DEFAULT 0.00",
+        "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS liveness_score DECIMAL(5,2) DEFAULT 0.00",
+        "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS location_status VARCHAR(50) DEFAULT 'Unknown'",
+        "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS attendance_status VARCHAR(50) DEFAULT 'Absent'",
+        "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS session_type VARCHAR(20) DEFAULT 'morning'",
+        "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS distance_from_campus DECIMAL(10,2) DEFAULT 0.00",
+        "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,8)",
+        "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS longitude DECIMAL(11,8)"
+    ];
+    for (const col of attendanceCols) {
+        try { await pool.query(col); } catch(e) { /* column already exists, skip */ }
+    }
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS attendance_settings (

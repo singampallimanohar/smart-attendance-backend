@@ -1,13 +1,36 @@
-const express = require('express');
-const router = express.Router();
-const attendanceController = require('../controllers/attendanceController');
-const { verifyToken, verifyStudent } = require('../utils/authMiddleware');
-const multer = require('multer');
-const upload = multer({ dest: 'uploads/temp/' }); // Temp storage for face verification
+const { matchFace } = require("../services/faceService");
 
-router.use(verifyToken, verifyStudent);
+// ================= FACE ATTENDANCE =================
+router.post("/face-mark", async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { descriptor } = req.body;
 
-router.post('/check-in', upload.single('face_image'), attendanceController.checkIn);
-router.post('/check-out', upload.single('face_image'), attendanceController.checkOut);
+    // Get all students with face data
+    const [students] = await db.query(
+      "SELECT student_id, face_descriptor FROM students WHERE face_descriptor IS NOT NULL"
+    );
 
-module.exports = router;
+    const match = await matchFace(descriptor, students);
+
+    if (!match) {
+      return res.json({
+        success: false,
+        message: "No face match found",
+      });
+    }
+
+    await db.query(
+      "INSERT INTO attendance (student_id, date, status, time_in) VALUES (?, CURDATE(), 'present', CURTIME())",
+      [match]
+    );
+
+    res.json({
+      success: true,
+      message: "Attendance marked",
+      student_id: match,
+    });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
